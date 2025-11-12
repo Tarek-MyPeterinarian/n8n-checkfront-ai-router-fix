@@ -1,0 +1,65 @@
+{
+  "@attributes": {
+    "version": "2025.10.27-9a8463fd",
+    "host": "tpa.checkfront.com"
+  },
+  "booking": {
+    "@attributes": {
+      "booking_id": "TEST-001"
+    },
+    "status": "PEND",
+    "code": "TEST-121125",
+    "tid": {},
+    "created_date": "1762920000",
+    "staff_id": "1",
+    "source_ip": "127.0.0.1",
+    "start_date": "1763625600",
+    "end_date": "1763645400",
+    "customer": {
+      "code": "TEST-001",
+      "name": "Test Customer",
+      "email": "test@example.com",
+      "phone": "+4512345678",
+      "consent_given": "1",
+      "address": "Test Street 123",
+      "postal_zip": "1000",
+      "city": "Copenhagen",
+      "name_of_pet": "Fluffy",
+      "type_of_pet": "Dog",
+      "pet_breed": "Golden Retriever",
+      "how_did_you_hear_about_us": "Test",
+      "paid_distance_from_the_pq": {}
+    },
+    "fields": {
+      "consent_given": "1",
+      "name_of_pet": "Fluffy",
+      "type_of_pet": "Dog",
+      "pet_breed": "Golden Retriever",
+      "customer_phone": "+4512345678",
+      "customer_email": "test@example.com"
+    },
+    "order": {
+      "@attributes": {
+        "currency_id": "DKK"
+      },
+      "sub_total": "955.00",
+      "tax_total": "0.00",
+      "paid_total": "0.00",
+      "total": "955.00",
+      "items": {
+        "item": {
+          "@attributes": {
+            "line_id": "1",
+            "item_id": "978"
+          },
+          "start_date": "1763641800",
+          "end_date": "1763645400",
+          "sku": "de-sheddingforextrasmalldogsshorthairunder3kg",
+          "status": "PEND",
+          "category_id": "45",
+          "total": "955.00"
+        }
+      }
+    }
+  }
+}

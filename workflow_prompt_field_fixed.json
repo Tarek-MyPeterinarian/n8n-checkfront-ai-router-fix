@@ -1,0 +1,1197 @@
+{
+  "updatedAt": "2025-11-08T12:58:56.569Z",
+  "createdAt": "2025-11-07T05:09:37.619Z",
+  "id": "YM0t1gombwAUtELO",
+  "name": "🤖 Checkfront AI Booking Router",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "checkfront-booking-ai",
+        "options": {}
+      },
+      "id": "53e06fdc-3106-4e05-a5d8-7ed674e1dec9",
+      "name": "Checkfront Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -2080,
+        240
+      ],
+      "webhookId": "checkfront-booking-ai"
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhook = $input.first();\nconst booking = webhook.json?.body?.booking;\n\nif (!booking) {\n  throw new Error('No booking data found in webhook');\n}\n\nlet items = booking.order?.items?.item;\nif (!items) {\n  throw new Error('No items found in booking');\n}\n\nif (!Array.isArray(items)) {\n  items = [items];\n}\n\n// Extract each service with datetime\n// Checkfront typically sends start_date as full ISO datetime\nconst services = items.map(item => ({\n  sku: item.sku || 'UNKNOWN',\n  name: item.name || 'UNKNOWN',\n  qty: item.qty || 1,\n  // Use item datetime if available, otherwise booking datetime\n  startTime: item.start_date || item.date || booking.start_date || booking.date_start || '',\n  endTime: item.end_date || booking.end_date || booking.date_end || ''\n}));\n\n// Return array of services\nreturn services.map(service => ({\n  json: {\n    serviceName: service.sku,\n    serviceDisplayName: service.name,\n    startTime: service.startTime,  // Full datetime\n    endTime: service.endTime,      // Full datetime\n    customerName: booking.customer?.name || '',\n    customerEmail: booking.customer?.email || '',\n    customerMobile: booking.customer?.phone || '',\n    customerAddress: `${booking.customer?.address || ''}, ${booking.customer?.postal_zip || ''} ${booking.customer?.city || ''}`.trim(),\n    petName: booking.customer?.name_of_pet || '',\n    petType: booking.customer?.type_of_pet || '',\n    petBreed: booking.customer?.pet_breed || '',\n    bookingID: booking.code || '',\n    reasonForVisit: booking.fields?.reason_for_visit || '',\n    petWeight: booking.fields?.pets_weight || '',\n    serviceCount: services.length\n  }\n}));"
+      },
+      "id": "28a18179-360e-44d7-8ecd-e724d0d244df",
+      "name": "Validate & Extract Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1856,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "id": "has-required-data",
+              "leftValue": "={{ $json.serviceName }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "has-times",
+              "leftValue": "={{ $json.startTime }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "230b4ca8-96de-4f37-9a1c-227ab95b6454",
+      "name": "Check Required Fields",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1632,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "tarek@mypeterinarian.com",
+        "subject": "❌ Checkfront Booking Failed Validation",
+        "message": "=A booking was received but missing required fields:\n\n**Service Name:** {{ $json.serviceName }}\n**Booking ID:** {{ $json.bookingID }}\n**Start Time:** {{ $json.startTime }}\n\n**Action Required:** Check the booking details and ensure all required information is present.",
+        "options": {}
+      },
+      "id": "640ec9c7-5273-46dc-a27a-509c237973f3",
+      "name": "Validation Error Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -1424,
+        576
+      ],
+      "webhookId": "65525c7e-0aa1-4763-aa68-31bbd63da921",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "C70miQCSNy5asd99",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ai-prompt",
+              "name": "aiPrompt",
+              "value": "=You are a pet service categorization expert for MyPeterinarian in Copenhagen.\n\nAnalyze this service and categorize it into EXACTLY ONE category.\n\nSERVICE NAME: {{ $('Validate & Extract Data').item.json.serviceName }}\nSERVICE DISPLAY NAME: {{ $('Validate & Extract Data').item.json.serviceDisplayName }}\n\nCATEGORIES:\n\n1. **veterinary** - Medical services including:\n   - Vaccines, health checks, prescriptions\n   - Tests (blood, urine, allergy, FeLV, FIV)\n   - Procedures (castration, microchipping, euthanasia)\n   - Diagnostics (ultrasound, x-ray, ECG, tonometry)\n   - Lab work (Laboklin, IDEXX, cytology)\n   - Passports, cremation services\n   - Medical subscriptions\n\n2. **grooming** - Grooming and spa services including:\n   - Full grooming, bathing, brushing\n   - De-shedding, nail clipping\n   - Anal glands, ear cleaning\n   - Hand-scissoring, hand-stripping\n   - Knot removal, pawdicure\n   - Teeth brushing, tick removal\n   - Touch-ups, spa packages\n\n3. **pet_care** - Boarding and care services including:\n   - Pet boarding, daycare, overnight stays\n   - Dog walking, pet sitting\n   - Administrative fees (distance, key handover, last minute)\n   - Store runs, medicine administration\n   - Weekend/holiday premiums, no-show fees\n\n4. **uncategorized** - Only if service doesn't clearly fit above categories\n\nRESPOND WITH ONLY THE CATEGORY NAME IN LOWERCASE:\nveterinary\nOR\ngrooming\nOR\npet_care\nOR\nuncategorized\n\nNO OTHER TEXT. NO EXPLANATIONS. JUST THE CATEGORY NAME.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "677a1d9c-08d4-4c8d-8d58-9a4d778e2bfa",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1408,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "veterinary",
+                    "id": "d928723e-873f-46e1-beaa-4bc288f410f0"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Veterinary"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "grooming",
+                    "id": "2543aa5f-cd8f-4971-80c4-2ae27e3d6811"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Grooming"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "pet_care",
+                    "id": "1ff99b26-d4b9-43d2-9e40-f963483e0fa6"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Pet Care"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "d5badd75-1c3c-46d1-8e53-476206fecbcc",
+      "name": "Route by AI Category",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -752,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list"
+        },
+        "start": "={{ new Date($json.startTime * 1000).toISOString() }}",
+        "end": "={{ new Date($json.endTime * 1000).toISOString() }}",
+        "additionalFields": {
+          "location": "My Pet Veterinarian, Copenhagen, Denmark",
+          "timeZone": "Europe/Berlin",
+          "colorId": "11"
+        },
+        "title": "={{ $json.petName }}: {{ $json.serviceName }}, {{ $json.bookingID }}",
+        "description": "=Customer's name: {{ $json.customerName }}\nEmail: {{ $json.customerEmail }}\nMobile: {{ $json.customerMobile }}\nAddress: {{ $json.customerAddress }}\nDates: {{ new Date($json.startTime * 1000).toLocaleString('en-US', { timeZone: 'Europe/Berlin' }) }} – {{ new Date($json.endTime * 1000).toLocaleString('en-US', { timeZone: 'Europe/Berlin' }) }}\nType of Pet: {{ $json.petType }}\nPet Breed: {{ $json.petBreed }}\nPet Name: {{ $json.petName }}\nReason for visit: {{ $json.reasonForVisit || 'Not specified' }}\nPet's weight: {{ $json.petWeight || 'Not specified' }}",
+        "attendeesUi": {
+          "attendeeValues": [
+            {
+              "email": "={{ $json.customerEmail }}"
+            }
+          ]
+        }
+      },
+      "id": "fdc570db-686a-49d8-b16f-9ccde893ae25",
+      "name": "Create Vet Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        -320,
+        -48
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "aXnEGl9YRg7hYlLL",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "combinator": "or",
+                "conditions": [
+                  {
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "leftValue": "={{ $json.dayOfWeek }}",
+                    "rightValue": "Monday",
+                    "id": "misty-monday"
+                  },
+                  {
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "leftValue": "={{ $json.dayOfWeek }}",
+                    "rightValue": "Wednesday",
+                    "id": "misty-wednesday"
+                  },
+                  {
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "leftValue": "={{ $json.dayOfWeek }}",
+                    "rightValue": "Thursday",
+                    "id": "misty-thursday"
+                  },
+                  {
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "leftValue": "={{ $json.dayOfWeek }}",
+                    "rightValue": "Saturday",
+                    "id": "misty-saturday"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                }
+              },
+              "renameOutput": true,
+              "outputKey": "Misty"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 1
+        }
+      },
+      "id": "da5bc715-2169-438d-9d46-3f1120783b7e",
+      "name": "Route Grooming by Day",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -528,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list"
+        },
+        "start": "={{ new Date($json.startTime * 1000).toISOString() }}",
+        "end": "={{ new Date($json.endTime * 1000).toISOString() }}",
+        "additionalFields": {
+          "location": "My Pet Veterinarian, Copenhagen, Denmark",
+          "timeZone": "Europe/Berlin",
+          "colorId": "7"
+        },
+        "title": "={{ $json.petName }}: {{ $json.serviceName }}, {{ $json.bookingID }}",
+        "description": "=Customer's name: {{ $json.customerName }}\nEmail: {{ $json.customerEmail }}\nMobile: {{ $json.customerMobile }}\nAddress: {{ $json.customerAddress }}\nDates: {{ new Date($json.startTime * 1000).toLocaleString('en-US', { timeZone: 'Europe/Berlin' }) }} – {{ new Date($json.endTime * 1000).toLocaleString('en-US', { timeZone: 'Europe/Berlin' }) }}\nType of Pet: {{ $json.petType }}\nPet Breed: {{ $json.petBreed }}\nPet Name: {{ $json.petName }}",
+        "attendeesUi": {
+          "attendeeValues": [
+            {
+              "email": "={{ $json.customerEmail }}"
+            }
+          ]
+        }
+      },
+      "id": "c9778343-d51e-49fc-a02f-8733e68db80c",
+      "name": "Misty's Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        -320,
+        112
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "aXnEGl9YRg7hYlLL",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list"
+        },
+        "start": "={{ new Date($json.startTime * 1000).toISOString() }}",
+        "end": "={{ new Date($json.endTime * 1000).toISOString() }}",
+        "additionalFields": {
+          "location": "My Pet Veterinarian, Copenhagen, Denmark",
+          "timeZone": "Europe/Berlin",
+          "colorId": "7"
+        },
+        "title": "={{ $json.petName }}: {{ $json.serviceName }}, {{ $json.bookingID }}",
+        "description": "=Customer's name: {{ $json.customerName }}\nEmail: {{ $json.customerEmail }}\nMobile: {{ $json.customerMobile }}\nAddress: {{ $json.customerAddress }}\nDates: {{ new Date($json.startTime * 1000).toLocaleString('en-US', { timeZone: 'Europe/Berlin' }) }} – {{ new Date($json.endTime * 1000).toLocaleString('en-US', { timeZone: 'Europe/Berlin' }) }}\nType of Pet: {{ $json.petType }}\nPet Breed: {{ $json.petBreed }}\nPet Name: {{ $json.petName }}",
+        "attendeesUi": {
+          "attendeeValues": [
+            {
+              "email": "={{ $json.customerEmail }}"
+            }
+          ]
+        }
+      },
+      "id": "2fca87ce-de99-41b9-aa1d-67ef6106a44b",
+      "name": "Cecilie's Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        -320,
+        256
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "aXnEGl9YRg7hYlLL",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list"
+        },
+        "start": "={{ new Date($json.startTime * 1000).toISOString() }}",
+        "end": "={{ new Date($json.endTime * 1000).toISOString() }}",
+        "additionalFields": {
+          "location": "My Pet Veterinarian, Copenhagen, Denmark",
+          "timeZone": "Europe/Berlin",
+          "colorId": "9"
+        },
+        "title": "={{ $json.petName }}: {{ $json.serviceName }}, {{ $json.bookingID }}",
+        "description": "=MyPeterinarian's EMERGENCY GUIDELINES (PLEASE READ BEFORE JOB STARTS):\nhttps://docs.google.com/document/d/1nuREn6LxP5_VSz4v-rNcxbR-xj7HBbOz0vl9oPmZ6JY/edit?usp=sharing\n\nCustomer's name: {{ $json.customerName }}\nEmail: {{ $json.customerEmail }}\nMobile: {{ $json.customerMobile }}\nAddress: {{ $json.customerAddress }}\nDates: {{ new Date($json.startTime * 1000).toLocaleString('en-US', { timeZone: 'Europe/Berlin' }) }} – {{ new Date($json.endTime * 1000).toLocaleString('en-US', { timeZone: 'Europe/Berlin' }) }}\nType of Pet: {{ $json.petType }}\nPet Breed: {{ $json.petBreed }}\nPet Name: {{ $json.petName }}",
+        "attendeesUi": {
+          "attendeeValues": [
+            {
+              "email": "={{ $json.customerEmail }}"
+            }
+          ]
+        }
+      },
+      "id": "aa2a44c3-6df8-4ecc-b05d-10e804662d97",
+      "name": "Create Pet Care Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        -320,
+        416
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "aXnEGl9YRg7hYlLL",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "tarek@mypeterinarian.com",
+        "subject": "⚠️ AI Couldn't Categorize Checkfront Booking",
+        "message": "=The AI service categorizer couldn't determine the category for this booking:\n\n**Service:** {{ $json.serviceName }} ({{ $json.serviceDisplayName }})\n**Pet:** {{ $json.petName }}\n**Customer:** {{ $json.customerName }}\n**Booking ID:** {{ $json.bookingID }}\n**Start Time:** {{ $json.startTime }}\n**End Time:** {{ $json.endTime }}\n\n**AI Category:** {{ $json.category }}\n**Groomer:** {{ $json.groomer }}\n**Day of Week:** {{ $json.dayOfWeek }}\n\n**Action Required:** Please manually add this booking to the appropriate calendar.\n",
+        "options": {}
+      },
+      "id": "37d5df28-05f8-42dc-b3f8-a8b785c408fd",
+      "name": "AI Uncategorized Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -528,
+        544
+      ],
+      "webhookId": "38d2ac54-f1db-475c-8bc5-521daf525b63",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "C70miQCSNy5asd99",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "formatDate",
+        "date": "={{ $('Validate & Extract Data').item.json.startTime }}",
+        "format": "custom",
+        "customFormat": "cccc",
+        "options": {
+          "timezone": "Europe/Berlin"
+        }
+      },
+      "id": "affed3b1-d451-499b-81ee-dfa7bd820357",
+      "name": "Get Day of Week",
+      "type": "n8n-nodes-base.dateTime",
+      "typeVersion": 2,
+      "position": [
+        -1408,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1248,
+        448
+      ],
+      "id": "9130ed44-9be2-476a-a6e7-38e259da4f06",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "uxD33lwvZIqXX68Q",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.aiPrompt }}",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -1248,
+        224
+      ],
+      "id": "6b6257a0-29c1-4648-b93d-f1420b8ecbbc",
+      "name": "Prompt"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI response - handles both OpenAI and LangChain formats\nlet response;\n\n// Try different possible response paths\nif ($input.item.json.text) {\n  response = $input.item.json.text;\n} else if ($input.item.json.message?.content) {\n  response = $input.item.json.message.content;\n} else if ($input.item.json.output) {\n  response = $input.item.json.output;\n} else if ($input.item.json.response) {\n  response = $input.item.json.response;\n} else {\n  throw new Error('Could not find AI response in expected fields');\n}\n\n// Clean up markdown code blocks\nresponse = response\n  .replace(/```json\\n?/g, '')\n  .replace(/```\\n?/g, '')\n  .trim();\n\n// Parse the JSON response\nconst aiData = JSON.parse(response);\n\n// Get the original booking data from the \"Set Key Data\" node\nconst bookingData = $('Validate & Extract Data').item.json;\n\n// Return all booking data plus AI decisions\nreturn {\n  ...bookingData,\n  category: aiData.category,\n  groomer: aiData.groomer || 'none',\n  dayOfWeek: aiData.dayOfWeek\n};"
+      },
+      "id": "1e17b33d-81f7-4d4e-a877-cdeefe1e44ef",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -944,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Checkfront to Google Calendar Automation",
+        "height": 848,
+        "width": 2000
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2128,
+        -80
+      ],
+      "typeVersion": 1,
+      "id": "05f4f3f6-15cd-46fd-9e6a-c1f892556e99",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pass through individual test case (no batching)\nconst item = $input.item.json;\n\n// Skip header rows\nif (!item.service_name || item.service_name === 'service_name' || item.service_name === 'expected_category Veterinary Consultation') {\n  return [];\n}\n\nreturn [{\n  json: {\n    rowNumber: $input.item.json.row_number || $itemIndex + 2, // +2 because row 1 is headers\n    serviceName: item.service_name,\n    expectedCategory: item.expected_category,\n    startTime: item.start_time || '2025-11-07T10:00:00+01:00',\n    notes: item.notes || ''\n  }\n}];"
+      },
+      "id": "add88df8-dbd6-488a-ac39-39bbc55d8542",
+      "name": "Prepare Test Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1760,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a booking router for MyPeterinarian in Copenhagen, Denmark.\n\nAnalyze this booking and return routing decisions in JSON format.\n\nBOOKING DATA:\nService: {{ $json.serviceName }}\nStart: {{ $json.startTime }}\n\nCATEGORIZATION RULES:\n\nveterinary: Medical services\n- Keywords: Veterinary, Vaccine, Vaccination, Euthanasia, Test, Castration, Passport, Prescription, Health Check, Microchipping, Cremation, Blood Sample, Laboklin, IDEXX, Cytology, Allergy, Rabies, Urinalysis, FeLV, FIV, Anti-parasite, Ultrasound, X-ray, ECG, Tonometry, Fluorescein, Subscription\n\ngrooming: Grooming services\n- Keywords: Grooming, Bathing, Brushing, De-shedding, Nail Clipping, Anal Glands, Ear Cleaning, Hand-scissoring, Hand-stripping, Knot Removal, Pawdicure, Teeth Brushing, Tick Removal, Touch-up, Full Spa\n\npetcare: Care and boarding services\n- Keywords: Boarding, Pet Care, Daycare, petdaycare, Overnight, Walk, Pet Sitting, Admin Fee, Distance Fee, Key Handover, Last Minute, Store Run, Weekends, Public Holiday, No-show Fee, Medicine Administration\n- IMPORTANT: Any variation with \"daycare\" (petdaycare1hour, petdaycare, etc.) = petcare category\n\nfallback: Unclear or doesn't match any category above\n\nGROOMING STAFF SCHEDULE:\n- Misty works: Monday, Wednesday, Thursday, Saturday\n- Cecilie works: Tuesday, Friday, Sunday\n\nTASK:\n1. Categorize the service (check ALL keywords carefully)\n2. Calculate the day of week from the start date (use timezone: Europe/Copenhagen)\n3. If grooming category, determine staff member based on day of week\n4. For veterinary and petcare, set groomer to \"none\"\n\nOUTPUT FORMAT (JSON only, no markdown, no explanations):\n{\n  \"category\": \"veterinary|grooming|petcare|fallback\",\n  \"dayOfWeek\": \"Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday\",\n  \"groomer\": \"misty|cecilie|none\"\n}\n\nCRITICAL:\n- Return ONLY valid JSON\n- No markdown code blocks (```json)\n- No explanations\n- Check service name against ALL category keywords before choosing fallback",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -1552,
+        848
+      ],
+      "id": "d75f96d5-69e2-4133-a4a6-40ad521a3e4e",
+      "name": "AI Categorization"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate results from all test runs\nconst items = $input.all();\n\nlet totalTests = 0;\nlet correctPredictions = 0;\nlet parseErrors = 0;\nconst categoryStats = {\n  veterinary: { total: 0, correct: 0 },\n  grooming: { total: 0, correct: 0 },\n  petcare: { total: 0, correct: 0 }\n};\n\nfor (const item of items) {\n  totalTests++;\n  \n  const expectedCategory = item.json.expectedCategory ? item.json.expectedCategory.toLowerCase() : '';\n  const aiCategory = item.json.aiCategory ? item.json.aiCategory.toLowerCase() : '';\n  \n  if (item.json.parseError) {\n    parseErrors++;\n  }\n  \n  const isCorrect = aiCategory === expectedCategory;\n  if (isCorrect) {\n    correctPredictions++;\n  }\n  \n  // Update category stats\n  if (expectedCategory && categoryStats[expectedCategory]) {\n    categoryStats[expectedCategory].total++;\n    if (isCorrect) {\n      categoryStats[expectedCategory].correct++;\n    }\n  }\n}\n\n// Calculate percentages\nconst accuracyPercent = totalTests > 0 ? (correctPredictions / totalTests * 100).toFixed(2) : 0;\nconst vetAccuracy = categoryStats.veterinary.total > 0 ? (categoryStats.veterinary.correct / categoryStats.veterinary.total * 100).toFixed(2) : 0;\nconst groomingAccuracy = categoryStats.grooming.total > 0 ? (categoryStats.grooming.correct / categoryStats.grooming.total * 100).toFixed(2) : 0;\nconst petcareAccuracy = categoryStats.petcare.total > 0 ? (categoryStats.petcare.correct / categoryStats.petcare.total * 100).toFixed(2) : 0;\n\nreturn [{\n  json: {\n    timestamp: new Date().toISOString(),\n    total_tests: totalTests,\n    correct_predictions: correctPredictions,\n    parse_errors: parseErrors,\n    accuracy_percent: parseFloat(accuracyPercent),\n    veterinary_accuracy: parseFloat(vetAccuracy),\n    grooming_accuracy: parseFloat(groomingAccuracy),\n    petcare_accuracy: parseFloat(petcareAccuracy),\n    failed_count: totalTests - correctPredictions\n  }\n}];"
+      },
+      "id": "00328624-a010-42c8-891a-44ccd5a75afb",
+      "name": "Compare Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1200,
+        1184
+      ],
+      "id": "d6a83275-3499-474f-bfc1-182cc34d8cd2",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "uxD33lwvZIqXX68Q",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "source": "googleSheets",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZGoSz1xoVOIaI5zKHcEqRqkU_iBBbC52S6_7nwnZP-I",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Test Cases",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ZGoSz1xoVOIaI5zKHcEqRqkU_iBBbC52S6_7nwnZP-I/edit#gid=0"
+        }
+      },
+      "type": "n8n-nodes-base.evaluationTrigger",
+      "typeVersion": 4.7,
+      "position": [
+        -1968,
+        848
+      ],
+      "id": "c042b31b-8084-4d9e-8b66-80e9dbe5b87f",
+      "name": "When fetching a dataset row",
+      "alwaysOutputData": false,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Ntiq79lnuGIkmBRI",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "source": "googleSheets",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZGoSz1xoVOIaI5zKHcEqRqkU_iBBbC52S6_7nwnZP-I",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 583665556,
+          "mode": "list",
+          "cachedResultName": "Evaluation Results",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ZGoSz1xoVOIaI5zKHcEqRqkU_iBBbC52S6_7nwnZP-I/edit#gid=583665556"
+        },
+        "outputs": {
+          "values": [
+            {
+              "outputName": "timestamp",
+              "outputValue": "={{ $json.timestamp }}"
+            },
+            {
+              "outputName": "total_tests",
+              "outputValue": "={{ $json.total_tests }}"
+            },
+            {
+              "outputName": "correct_predictions",
+              "outputValue": "={{ $json.correct_predictions }}"
+            },
+            {
+              "outputName": "parse_errors",
+              "outputValue": "={{ $json.parse_errors }}"
+            },
+            {
+              "outputName": "accuracy_percent",
+              "outputValue": "={{ $json.accuracy_percent }}"
+            },
+            {
+              "outputName": "veterinary_accuracy",
+              "outputValue": "={{ $json.veterinary_accuracy }}"
+            },
+            {
+              "outputName": "grooming_accuracy",
+              "outputValue": "={{ $json.grooming_accuracy }}"
+            },
+            {
+              "outputName": "petcare_accuracy",
+              "outputValue": "={{ $json.petcare_accuracy }}"
+            },
+            {
+              "outputName": "failed_count",
+              "outputValue": "={{ $json.failed_count }}"
+            },
+            {
+              "outputName": "service_name",
+              "outputValue": "={{ $('Prepare Test Data').item.json.serviceName }}"
+            },
+            {
+              "outputName": "expected_category",
+              "outputValue": "={{ $('Prepare Test Data').item.json.expectedCategory }}"
+            },
+            {
+              "outputName": "actual_output",
+              "outputValue": "={{ $('Update row in sheet').item.json.actual_output }}"
+            },
+            {
+              "outputName": "start_time",
+              "outputValue": "={{ $('When fetching a dataset row').item.json.start_time }}"
+            },
+            {
+              "outputName": "notes",
+              "outputValue": "={{ $('When fetching a dataset row').item.json.notes }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.evaluation",
+      "typeVersion": 4.8,
+      "position": [
+        -432,
+        848
+      ],
+      "id": "01616d42-7031-4872-8a19-ad16604e618b",
+      "name": "Evaluation",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Ntiq79lnuGIkmBRI",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Get test data from previous node\nconst testData = $('Prepare Test Data').item.json;\n\n// Get AI response\nlet aiCategory = 'parse_error';\nlet parseError = true;\n\ntry {\n  let response = $input.item.json.text || $input.item.json.output || $input.item.json.response;\n  \n  if (!response) {\n    throw new Error('No response found');\n  }\n  \n  // Clean markdown\n  response = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  \n  // Parse JSON\n  const aiData = JSON.parse(response);\n  aiCategory = aiData.category ? aiData.category.toLowerCase() : 'parse_error';\n  parseError = false;\n  \n} catch (error) {\n  // Keep defaults\n}\n\n// Return result\nreturn {\n  rowNumber: testData.rowNumber,\n  serviceName: testData.serviceName,\n  expectedCategory: testData.expectedCategory,\n  startTime: testData.startTime,\n  notes: testData.notes,\n  aiCategory: aiCategory,\n  parseError: parseError\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1248,
+        848
+      ],
+      "id": "2296e74d-97ec-447f-84bd-43659cb93e9c",
+      "name": "Parse AI Response1"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZGoSz1xoVOIaI5zKHcEqRqkU_iBBbC52S6_7nwnZP-I",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Test Cases",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ZGoSz1xoVOIaI5zKHcEqRqkU_iBBbC52S6_7nwnZP-I/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": 0,
+            "service_name": "={{ $json.serviceName }}",
+            "actual_output": "={{ $json.aiCategory }}"
+          },
+          "matchingColumns": [
+            "service_name"
+          ],
+          "schema": [
+            {
+              "id": "service_name",
+              "displayName": "service_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "expected_category",
+              "displayName": "expected_category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "actual_output",
+              "displayName": "actual_output",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "start_time",
+              "displayName": "start_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -1040,
+        848
+      ],
+      "id": "2428ed48-4f86-4e98-b6e2-20752437b007",
+      "name": "Update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Ntiq79lnuGIkmBRI",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -832,
+        848
+      ],
+      "id": "35346393-e6a3-40e4-994c-03e64384e4f8",
+      "name": "Wait",
+      "webhookId": "852a3f53-251e-46d4-8071-bf66a176afe7"
+    },
+    {
+      "parameters": {
+        "content": "## AI Workflow Evaluation\n",
+        "height": 576,
+        "width": 1824,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2048,
+        784
+      ],
+      "typeVersion": 1,
+      "id": "d00c632a-73ad-4ce9-bb41-b172abe8443e",
+      "name": "Sticky Note1"
+    }
+  ],
+  "connections": {
+    "Checkfront Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate & Extract Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Extract Data": {
+      "main": [
+        [
+          {
+            "node": "Check Required Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Required Fields": {
+      "main": [
+        [
+          {
+            "node": "Build AI Prompt",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Day of Week",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validation Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Prompt": {
+      "main": [
+        [
+          {
+            "node": "Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by AI Category": {
+      "main": [
+        [
+          {
+            "node": "Create Vet Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route Grooming by Day",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Pet Care Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Uncategorized Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Grooming by Day": {
+      "main": [
+        [
+          {
+            "node": "Misty's Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cecilie's Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Day of Week": {
+      "main": [
+        [
+          {
+            "node": "Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Prompt",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Route by AI Category",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Test Data": {
+      "main": [
+        [
+          {
+            "node": "AI Categorization",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Categorization": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compare Results": {
+      "main": [
+        [
+          {
+            "node": "Evaluation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Categorization",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When fetching a dataset row": {
+      "main": [
+        [
+          {
+            "node": "Prepare Test Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response1": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Compare Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "952d2088-e799-4e1a-bbd9-51e431378335",
+  "versionCounter": 48,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2025-11-07T05:09:37.624Z",
+      "createdAt": "2025-11-07T05:09:37.624Z",
+      "role": "workflow:owner",
+      "workflowId": "YM0t1gombwAUtELO",
+      "projectId": "lLdlIFAAfzQDXmfn",
+      "project": {
+        "updatedAt": "2025-11-06T07:03:43.085Z",
+        "createdAt": "2025-11-06T06:58:01.730Z",
+        "id": "lLdlIFAAfzQDXmfn",
+        "name": "Tarek Abu Sham <tarek@mypeterinarian.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-11-06T06:58:01.731Z",
+            "createdAt": "2025-11-06T06:58:01.731Z",
+            "userId": "84faca5d-595c-4eff-bbce-7d4afb16608a",
+            "projectId": "lLdlIFAAfzQDXmfn",
+            "user": {
+              "updatedAt": "2025-11-07T23:02:02.000Z",
+              "createdAt": "2025-11-06T06:58:01.073Z",
+              "id": "84faca5d-595c-4eff-bbce-7d4afb16608a",
+              "email": "tarek@mypeterinarian.com",
+              "firstName": "Tarek",
+              "lastName": "Abu Sham",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-11-06T07:02:54.809Z",
+                "personalization_survey_n8n_version": "1.118.2",
+                "companySize": "<20",
+                "companyType": "ecommerce",
+                "role": "business-owner",
+                "reportedSource": "youtube"
+              },
+              "settings": {
+                "userActivated": true,
+                "easyAIWorkflowOnboarded": true,
+                "firstSuccessfulWorkflowId": "WfAl4pIklyE8Xhfc",
+                "userActivatedAt": 1762483470314
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2025-11-08",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": []
+}
